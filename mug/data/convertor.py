@@ -7,34 +7,47 @@ import string
 
 import numpy as np
 
+"""
+@dataclass 装饰器被应用于 BeatmapMeta 类。
+这意味着 BeatmapMeta 类将会自动获得一些常见方法，比如初始化方法 __init__、字符串表示方法 __str__、等值比较方法 __eq__ 
+等。此外，dataclass 还允许你定义默认值、默认工厂函数等来初始化属性。
+"""
+
 
 @dataclass
-class BeatmapMeta:
-    path: str
-    audio: str = ""
-    game_mode: int = 0
-    convertor: 'BaseOsuConvertor' = None
-    cs: float = 0
-    version: str = ""
-    set_id: int = -1
-    file_meta: List[str] = field(default_factory=lambda: [])
-    timing_points: List[str] = field(default_factory=lambda: [])
+class BeatmapMeta:  # 谱面元数据
+    path: str  # osu文件路径
+    audio: str = ""  # 音频文件名
+    game_mode: int = 0  # osu游戏模式
+    convertor: 'BaseOsuConvertor' = None  # BaseOsuConvertor对象
+    cs: float = 0  # 圆圈大小(CircleSize)
+    version: str = ""  # osu文件版本
+    set_id: int = -1  # 谱面id(BeatmapSetID)
+    file_meta: List[str] = field(default_factory=lambda: [])  # 存储谱面源文件中所有meta部分的文本
+    timing_points: List[str] = field(default_factory=lambda: [])  # 存储谱面源文件中的所有timing点
 
+    # 将BeatmapMeta类的属性转换为字典类型，但不包含名为 'convertor'、'file_meta' 和 'timing_points' 的属性
     def for_batch(self):
         result = asdict(self, dict_factory=lambda x: {k: v
                                                       for (k, v) in x
-                                                      if k != 'convertor' and k != 'file_meta' and k != 'timing_points'})
+                                                      if
+                                                      k != 'convertor' and k != 'file_meta' and k != 'timing_points'})
         return result
 
 
 def read_item(line):
-    return line.split(":")[-1].strip()
+    return line.split(":")[-1].strip()  # strip()函数的功能是移除字符串开头和结尾的空白字符
+
 
 valid_chars = "-_.()[]/\\' %s%s" % (string.ascii_letters, string.digits)
 
+
+# reformat text，只保留有效字符
 def slugify(text):
     return "".join(c for c in text if c in valid_chars)
 
+
+# 读取一个osu文件，并以此生成 Note列表（hit_objects） 以及 BeatmapMeta对象（从meta元数据中读取）
 def parse_osu_file(osu_path, convertor_params: Optional[dict]) -> Tuple[List[str], BeatmapMeta]:
     data = open(osu_path, 'r', encoding='utf-8').read().split("\n")
     parsing_context = ""
@@ -91,12 +104,13 @@ def parse_osu_file(osu_path, convertor_params: Optional[dict]) -> Tuple[List[str
     return hit_objects, meta
 
 
+# 反之，将一个BeatmapMeta对象和其对应的Note列表转换为osu格式的谱面
 def save_osu_file(meta: BeatmapMeta, note_array: np.ndarray, path=None, override=None,
                   gridify=None):
     convertor = meta.convertor
     hit_objects = convertor.array_to_objects(note_array, meta)
     try:
-        bpm, offset, hit_objects = gridify(hit_objects)
+        bpm, offset, hit_objects = gridify(hit_objects)  # gridify应当是整理timing的函数
     except:
         import traceback
         traceback.print_exc()
@@ -120,56 +134,61 @@ def save_osu_file(meta: BeatmapMeta, note_array: np.ndarray, path=None, override
             f.write(hit_object + "\n")
 
 
+# 谱面转换抽象类
 class BaseOsuConvertor(metaclass=ABCMeta):
 
+    # 获取时间码位置
     def read_time(self, text):
-        t = int(float(text)) / self.rate + self.offset_ms
-        index = int(t / self.frame_ms)
-        offset = (t - index * self.frame_ms) / self.frame_ms
+        t = int(float(text)) / self.rate + self.offset_ms  # ms时间
+        index = int(t / self.frame_ms)  # 帧码
+        offset = (t - index * self.frame_ms) / self.frame_ms  # 与帧起始时间的偏移量
         return int(round(t)), index, offset
 
     def __init__(self, frame_ms, max_frame, mirror=False, from_logits=False, offset_ms=0,
                  random=False, rate=1.0, mirror_at_interval_prob=0.0):
-        self.frame_ms = frame_ms
-        self.max_frame = max_frame
+        self.frame_ms = frame_ms  # 每帧多少ms
+        self.max_frame = max_frame  # 最大帧数
         self.mirror = mirror
         self.from_logits = from_logits
-        self.offset_ms = offset_ms
+        self.offset_ms = offset_ms  # 偏移量ms
         self.random = random
         self.rate = rate
         self.mirror_at_interval_prob = mirror_at_interval_prob
 
-
+    # Note序列化为numpy矩阵
     @abstractmethod
     def objects_to_array(self, hit_objects: List[str],
-                         meta: BeatmapMeta) -> Tuple[np.ndarray, np.ndarray]: pass
+                         meta: BeatmapMeta) -> Tuple[np.ndarray, np.ndarray]:
+        pass
 
+    # numpy矩阵反序列化为Note列表
     @abstractmethod
-    def array_to_objects(self, note_array: np.ndarray, meta: BeatmapMeta) -> List[str]: pass
+    def array_to_objects(self, note_array: np.ndarray, meta: BeatmapMeta) -> List[str]:
+        pass
 
-
+    # 生成timing的numpy数组（返回值中bool标识是否有变速）
     def timing_to_array(self, meta: BeatmapMeta) -> Tuple[np.ndarray, bool]:
         if len(meta.timing_points) == 0:
             return [None, False]
 
-        red_lines = [] # (st, bpm)
-        segment_list = [] # (st, visual_bpm, true_bpm)
+        red_lines = []  # (st, bpm)
+        segment_list = []  # (st, visual_bpm, true_bpm)
         last_true_bpm = None
 
         for line in meta.timing_points:
             time_ms, timing = line.split(",")[:2]
             timing = float(timing)
             time_ms = float(time_ms)
-            if timing < 0: # green line
+            if timing < 0:  # green line
                 true_bpm = last_true_bpm * 100 / -timing
-            else: # red lines
+            else:  # red lines
                 true_bpm = 60000 / timing
                 last_true_bpm = true_bpm
                 if len(red_lines) == 0 or red_lines[-1][1] != true_bpm:
                     red_lines.append((time_ms, true_bpm))
             segment_list.append((time_ms, true_bpm, last_true_bpm))
 
-        # detech visual sv
+        # detech visual sv 检查是否有变速
         cur_bpm = None
         has_sv = False
         if len(red_lines) > 1:
@@ -183,7 +202,7 @@ class BaseOsuConvertor(metaclass=ABCMeta):
                         has_sv = True
                         break
 
-        # generate beat array
+        # generate beat array 生成bpm数组
         array_length = min(self.max_frame, int(self.max_frame / self.rate))
         array = np.zeros((array_length, 2), dtype=np.float32)
         for i, (start_time_ms, true_bpm, _) in enumerate(segment_list):
@@ -192,7 +211,7 @@ class BaseOsuConvertor(metaclass=ABCMeta):
                 true_bpm = true_bpm * 2
             while true_bpm >= 300:
                 true_bpm = true_bpm / 2
-    
+
             if i == len(segment_list) - 1:
                 end_time_ms = self.frame_ms * self.max_frame
             else:
@@ -205,9 +224,11 @@ class BaseOsuConvertor(metaclass=ABCMeta):
                 array[idx, 0] = 1
                 array[idx, 1] = offset
                 beat_ms += 60000 / true_bpm / 2
-        
+
         return array, has_sv
 
+
+# 实例化抽象类作为转换类
 class OsuManiaConvertor(BaseOsuConvertor):
     def is_binary_positive(self, input):
         if self.from_logits:
@@ -323,6 +344,8 @@ class OsuManiaConvertor(BaseOsuConvertor):
 MOD_CONVERTOR = {
     3: OsuManiaConvertor
 }
+
+# 测试部分
 
 if __name__ == "__main__":
     # map_path = """E:\E\osu!\Songs\891164 Various Artists - 4K LN Dan Courses v2 - Extra Level -\Various Artists - 4K LN Dan Courses v2 - Extra Level - (_underjoy) [13th Dan - Yoru (Marathon)].osu"""
