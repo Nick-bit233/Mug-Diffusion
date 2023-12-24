@@ -25,6 +25,15 @@ def safe_copy(src_file, dest_dir):
 
 
 def prepare_local_beatmaps(song_dir, mode_int, out_dir, cs):
+    """
+        Function to prepare local beatmaps. It reads the song directory, filters the songs based on mode and circle size,
+        and copies the relevant files to the output directory.
+        :param song_dir: The directory containing the songs.
+        :param mode_int: The mode of the songs to be filtered.
+        :param out_dir: The output directory where the filtered songs will be copied.
+        :param cs: The circle size of the songs to be filtered.
+        :return: None
+    """
     raw_set_names = os.listdir(song_dir)
     print(len(raw_set_names))
     set_names = set()

@@ -11,9 +11,10 @@ from pytorch_lightning import Callback
 from torch.utils.data import Dataset
 import cv2
 import hashlib
-from pytorch_lightning.utilities.distributed import rank_zero_only
+from pytorch_lightning.utilities import rank_zero_only
 import sys
 import os
+
 sys.path.append(os.getcwd())
 
 from mug import util
@@ -21,9 +22,10 @@ from mug.data.convertor import *
 import minacalc
 
 
+# 定义数据集的基类（继承自pytorch的Dataset类）
 class OsuDataset(Dataset):
     def __init__(self,
-                 txt_file,
+                 txt_file,  # 所有数据集中的文件索引存放在一个txt文件中
                  feature_yaml=None,
                  sr=22050,
                  n_fft=2048,
@@ -51,12 +53,16 @@ class OsuDataset(Dataset):
         else:
             txt_file_paths = txt_file
         self.beatmap_paths = []
+        # 从txt文件中读取数据集中每个文件（beatmap）的路径
         for p in txt_file_paths:
             with open(p, "r", encoding='utf-8') as f:
                 self.beatmap_paths.extend(f.read().splitlines())
-        self.beatmap_paths = sorted(self.beatmap_paths, key=lambda x: int(hashlib.md5(x.encode('utf-8')).hexdigest(), 16))
+        # 对文件排序和筛选
+        self.beatmap_paths = sorted(self.beatmap_paths,
+                                    key=lambda x: int(hashlib.md5(x.encode('utf-8')).hexdigest(), 16))
         self.beatmap_paths = self.filter_beatmap_paths(self.beatmap_paths)
 
+        # 读取特征配置文件
         self.feature_yaml = None
         self.with_feature = with_feature
         self.feature_dropout_p = feature_dropout_p
@@ -68,6 +74,7 @@ class OsuDataset(Dataset):
                 test_paths = f.read().splitlines()
                 self.beatmap_paths = test_paths + self.beatmap_paths
 
+        # 计算音频相关参数
         self.audio_hop_length = n_fft // 4
         self.audio_frame_duration = self.audio_hop_length / sr
         self.audio_note_window_ratio = audio_note_window_ratio
@@ -75,6 +82,7 @@ class OsuDataset(Dataset):
             "frame_ms": self.audio_frame_duration * audio_note_window_ratio * 1000,
             "max_frame": max_audio_frame // audio_note_window_ratio
         }
+        # 其他处理音频的参数
         self.mirror_p = mirror_p
         self.random_p = random_p
         self.shift_p = shift_p
@@ -90,6 +98,8 @@ class OsuDataset(Dataset):
         self.max_audio_frame = max_audio_frame
         self.n_fft = n_fft
         self.max_duration = self.audio_frame_duration * max_audio_frame
+
+        # 为可能处理错误的文件添加缓存文件夹
         self.cache_dir = cache_dir
         self.error_files = []
         if cache_dir is not None:
@@ -100,7 +110,7 @@ class OsuDataset(Dataset):
                 self.error_files = list(map(lambda x: x.strip(), open(error_path).readlines()))
 
     def __len__(self):
-        return len(self.beatmap_paths)
+        return len(self.beatmap_paths)  # 以数据集中文件的数量作为数据集类对象的“长度”属性
 
     def load_feature(self, path, objs, dropout_prob=0, rate=1.0):
         name = os.path.basename(path)
@@ -115,9 +125,9 @@ class OsuDataset(Dataset):
         result = cursor.fetchone()
         feature_dict = {}
         feature_dict_dropout = {}
-        assert result is not None, "junk files" # ignore junk files
+        assert result is not None, "junk files"  # ignore junk files
 
-        # etterna scores
+        # 计算 etterna 分数
         notes = []
         max_note_time = min(self.max_duration, self.max_duration * rate) * 1000
         for line in objs:
@@ -163,7 +173,7 @@ class OsuDataset(Dataset):
                     star_ratio = 1 / (0.8184 * (1 / rate - 1) + 1)
                 # print(f"change sr: {result[i]} -> {result[i] * star_ratio}, since rate change: x{rate}.")
                 feature_dict[column_names[i]] = result[i] * star_ratio
-        
+
         # replace minacalc features
         # print(f"rate: {rate}, ett: {result_minacalc['overall']}/{feature_dict['ett']}")
         feature_dict.update({
@@ -193,8 +203,10 @@ class OsuDataset(Dataset):
         # print(f"{path} -> {emb_ids}")
         return feature_dict_dropout, emb_ids
 
+    # 重写__getitem__方法后，类的实例对象可以使用 o[i] 的方式调用该函数
     def __getitem__(self, i):
-        path = self.beatmap_paths[i]
+        path = self.beatmap_paths[i]  # 获得第i个数据集中的文件
+        # 计算转换该谱面数据的参数
         convertor_params = self.convertor_params.copy()
         convertor_params["mirror"] = np.random.random() < self.mirror_p
         convertor_params["random"] = np.random.random() < self.random_p
@@ -210,16 +222,20 @@ class OsuDataset(Dataset):
             convertor_params["offset_ms"] = random.randint(0, int(convertor_params["max_frame"] *
                                                                   convertor_params["frame_ms"] / 2))
         try:
+            # 解析和转换该谱面数据
             objs, beatmap_meta = parse_osu_file(path, convertor_params)
+            # 获得该谱面的note数据列表
             obj_array, valid_flag = beatmap_meta.convertor.objects_to_array(objs, beatmap_meta)
+            # 一个样本数据的字典：
             example = {
-                "meta": beatmap_meta.for_batch(),
-                "convertor": convertor_params,
-                "note": obj_array,
-                "valid_flag": valid_flag
+                "meta": beatmap_meta.for_batch(),  # 谱面元数据的字典
+                "convertor": convertor_params,  # 谱面对应的convertor参数字典
+                "note": obj_array,  # 谱面note数据列表
+                "valid_flag": valid_flag  # 有效检测位
+                # 剩下的两个对象是 "audio" 和 "feature"， 下面的代码将获取它们
             }
+            # 读取谱面对应的音频参数（转换为np.float32类型）
             if self.with_audio:
-
                 audio = util.load_audio(
                     self.cache_dir, beatmap_meta.audio, self.n_mels, self.audio_hop_length,
                     self.n_fft, self.sr, self.max_duration
@@ -228,7 +244,7 @@ class OsuDataset(Dataset):
                 if convertor_params["rate"] != 1.0:
                     t = int(round(audio.shape[1] / convertor_params["rate"]))
                     audio = cv2.resize(audio.reshape(self.n_mels, -1, 1), (t, self.n_mels))
-                
+
                 t = audio.shape[1]
                 if t < self.max_audio_frame:
                     audio = np.concatenate([
@@ -237,17 +253,17 @@ class OsuDataset(Dataset):
                     ], axis=1)
                 elif t > self.max_audio_frame:
                     audio = audio[:, :self.max_audio_frame]
-                
+
                 max_length_ms = np.sum(valid_flag) * convertor_params['frame_ms'] + 2000
                 max_valid_length = int(max_length_ms / self.audio_frame_duration / 1000) + 1
                 if max_valid_length < audio.shape[1]:
                     audio[:, max_valid_length:] = 0
-                
+
                 if np.random.random() < self.freq_mask_p:
-                    f = int(np.random.uniform(0, self.freq_mask_num)) # [0, F)
-                    f0 = random.randint(0, self.n_mels - f) # [0, v - f)
+                    f = int(np.random.uniform(0, self.freq_mask_num))  # [0, F)
+                    f0 = random.randint(0, self.n_mels - f)  # [0, v - f)
                     audio[f0:f0 + f, :] = 0
-                
+
                 if np.random.random() < self.pitch_p:
                     i = np.random.randint(1, 5)
                     zeros = np.zeros((i, audio.shape[1])).astype(np.float16)
@@ -257,12 +273,14 @@ class OsuDataset(Dataset):
                         audio = np.concatenate([zeros, audio[:-i, :]], axis=0)
 
                 example["audio"] = audio.astype(np.float32)
-
+            # 读取谱面对应的特征参数
             if self.with_feature:
-                feature_dict, feature = self.load_feature(beatmap_meta.path, objs, self.feature_dropout_p, convertor_params["rate"])
+                feature_dict, feature = self.load_feature(beatmap_meta.path, objs, self.feature_dropout_p,
+                                                          convertor_params["rate"])
                 example["feature"] = np.asarray(feature)
             return example
         except Exception as e:
+            # 出现异常时，存储错误信息到错误文件
             if path not in self.error_files:
                 with open(os.path.join(self.cache_dir, "error.txt"), "a+") as f:
                     f.write(f"{path}: {e}\n")
@@ -274,6 +292,7 @@ class OsuDataset(Dataset):
         return beatmap_paths
 
 
+# 构建子类：训练集类
 class OsuTrainDataset(OsuDataset):
 
     def __init__(self, **kwargs):
@@ -283,6 +302,7 @@ class OsuTrainDataset(OsuDataset):
         return beatmap_paths[:int(len(beatmap_paths))]
 
 
+# 构建子类：验证集类
 class OsuValidDataset(OsuDataset):
 
     def __init__(self, **kwargs):
@@ -330,18 +350,24 @@ class BeatmapLogger(Callback):
         torch.cuda.empty_cache()
 
 
+# 测试代码，构建一个数据集
 if __name__ == '__main__':
     import yaml
+    sys.path.append(os.getcwd())
+    print(os.getcwd())
+    os.chdir("../../")  # nickbit: change to root directory
+
     random.seed(0)
-    dataset = OsuDataset(txt_file="data/beatmap_4k/beatmap.txt", n_fft=512, max_audio_frame=32768, audio_note_window_ratio=8, 
-    n_mels=128, cache_dir="data/audio_cache", with_audio=True, with_feature=True, 
-    feature_yaml="configs/mug/mania_beatmap_features.yaml"
-    )
-    breakpoint()
+    dataset = OsuDataset(txt_file=r".\data\beatmap_4k\beatmap.txt", n_fft=512, max_audio_frame=32768,
+                         audio_note_window_ratio=8,
+                         n_mels=128, cache_dir="data/audio_cache", with_audio=True, with_feature=True,
+                         feature_yaml=r".\configs\mug\mania_beatmap_features.yaml"
+                         )
+    print(len(dataset))
+    print(dataset[0])
+    # breakpoint()
     # dataset[0]
 
-
-    
     # from tqdm import tqdm
 
     # os.makedirs(os.path.join("data", "audio_cache"), exist_ok=True)

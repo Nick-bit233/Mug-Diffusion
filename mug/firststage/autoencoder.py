@@ -67,6 +67,7 @@ class AutoencoderKL(pl.LightningModule):
     def encode(self, x):
         h = self.encoder(x)
         if self.log_var is None:
+            # 通过高斯分布的均值和标准差来定义后验分布
             posterior = DiagonalGaussianDistribution(h, scale=self.scale)
         else:
             posterior = DiagonalGaussianDistribution(h, scale=self.scale, logvar=self.log_var)
@@ -79,16 +80,27 @@ class AutoencoderKL(pl.LightningModule):
     def forward(self, input, sample_posterior=True):
         z = self.encode(input)
         if sample_posterior:
-            h = z.sample()
+            h = z.sample()  # 从后验分布中采样
         else:
-            h = z.mode()
+            h = z.mode()  # 如果不指定采样，就使用后验分布的均值
         dec = self.decode(h)
         return dec, z
 
+    """
+    这段代码定义了三个函数：`step`，`training_step`和`validation_step`，它们都是`AutoencoderKL`类的方法，这个类是一个PyTorch的`LightningModule`，用于实现一个变分自编码器（Variational Autoencoder，VAE）模型。
+    
+    `step`函数是一个通用的步骤函数，它接收一个批次的数据（`batch`），一个字符串（`split`）表示当前的阶段（如'train'或'val'），以及一个布尔值（`sample_posterior`）表示是否从后验分布中采样。这个函数首先从批次数据中提取音符（`notes`）和有效标志（`valid_flag`），然后将音符传递给模型进行前向传播，得到重构的音符（`reconstructions`）和编码后的数据（`z`）。然后，它计算损失函数的值（`loss`），并计算KL散度（`kl_loss`）。最后，它将KL散度乘以一个权重（`self.kl_weight`）并加到损失上，然后返回最终的损失和一些日志信息。
+    
+    `training_step`函数是模型训练过程中的一个步骤，它调用`step`函数进行前向传播和损失计算，然后使用`self.log`和`self.log_dict`方法记录损失和其他日志信息。这个函数的返回值是损失，它将被用于反向传播和参数更新。
+    
+    `validation_step`函数是模型验证过程中的一个步骤，它的工作方式与`training_step`函数类似，但是在调用`step`函数时，`sample_posterior`参数被设置为`False`，表示在验证过程中不从后验分布中采样。这个函数的返回值是日志信息，它将被用于记录验证过程的结果。
+    
+    总的来说，这三个函数是实现模型训练和验证的关键部分，它们定义了如何从输入数据计算损失，以及如何记录训练和验证过程的信息。
+    """
     def step(self, batch, split, sample_posterior):
         notes = batch['note']
         valid_flag = batch['valid_flag']
-        reconstructions, z = self(notes, sample_posterior)
+        reconstructions, z = self(notes, sample_posterior)  # 等价于self.forward(notes, sample_posterior)
 
         loss, log_dict = self.loss(notes, reconstructions, valid_flag)
         kl_loss = z.kl()
@@ -180,7 +192,7 @@ class AutoencoderKL(pl.LightningModule):
 
     def summary(self):
         import torchsummary
-        torchsummary.summary(self, (16, 4096), depth=10)
+        torchsummary.summary(self, (16, 4096))
 
 class Encoder(nn.Module):
     def __init__(self, *, x_channels, middle_channels, z_channels,
@@ -190,37 +202,45 @@ class Encoder(nn.Module):
         self.num_resolutions = len(channel_mult)
         self.num_res_blocks = num_res_blocks
 
-        # downsampling
+        # downsampling 下采样部分，目的是压缩输入数据的分辨率，增加通道数
+        # 一个卷积层，将x_channels通道的输入转换为middle_channels通道的输出
         self.conv_in = torch.nn.Conv1d(x_channels,
                                        middle_channels,
                                        kernel_size=3,
                                        stride=1,
                                        padding=1)
-        inchannel_mult = (1,) + tuple(channel_mult)
+        inchannel_mult = (1,) + tuple(channel_mult)  # (1, 1, 1, 2, 2, 4, 4)
         cur_scale = 1
-        self.down = nn.ModuleList()
+        self.down = nn.ModuleList()  # 一个列表，存放各个分辨率级别的下采样网络块
         for i_level in range(self.num_resolutions):
             block = nn.ModuleList()
             attn = nn.ModuleList()
+            # 例如：卷积获得的输出通道数是64，
+            # 则第1，2，3次采样后的输出通道数是64 * 1 = 64
+            # 第4，5采样后的输出通道数是64 * 2 = 128
+            # 第6，7采样后的输出通道数是64 * 4 = 256
             block_in = middle_channels * inchannel_mult[i_level]
             block_out = middle_channels * channel_mult[i_level]
             for i_block in range(self.num_res_blocks):
+                # 根据上述计算的输入和输出通道数，构建残差块
                 block.append(ResnetBlock(in_channels=block_in,
                                          out_channels=block_out,
                                          temb_channels=0,
                                          dropout=0,
                                          num_groups=num_groups))
-                block_in = block_out
-            down = nn.Module()
-            down.block = block
-            down.attn = attn
+                block_in = block_out  # 上一次采样的输出通道数，作为下一次采样的输入通道数
+            down = nn.Module()  # 准备一个网络块，用来包装下采样网络
+            down.block = block  # 放入残差块
+            down.attn = attn  # 放入注意力块，这里没有注意力块，所以是空的
             if i_level != self.num_resolutions - 1:
+                # 除了最后一次采样不需要下采样以外，构建一个下采样网络块
                 down.downsample = Downsample(block_in, True)
                 cur_scale += 1
-            self.down.append(down)
+            self.down.append(down)  # 将这一次采样所用的网络块放入下采样网络块列表
 
         # middle
         self.mid = nn.Module()
+        # 中间层，使用2个残差块，保持通道数不变，
         self.mid.block_1 = ResnetBlock(in_channels=block_in,
                                        out_channels=block_in,
                                        temb_channels=0,
@@ -234,9 +254,10 @@ class Encoder(nn.Module):
                                        num_groups=num_groups)
 
         # end
-        self.norm_out = Normalize(block_in, num_groups=num_groups)
+        self.norm_out = Normalize(block_in, num_groups=num_groups)  # 归一化层
+        # 一个卷积层，将经过中间层（通道数仍然为最后一次下采样后的block_in）输入转换为z_channels * 2通道的输出
         self.conv_out = torch.nn.Conv1d(block_in,
-                                        z_channels * 2, # for sampling Gaussian
+                                        z_channels * 2,  # for sampling Gaussian，因为要服从高斯分布，所以输出通道数是2倍
                                         kernel_size=3,
                                         stride=1,
                                         padding=1)
@@ -260,7 +281,7 @@ class Encoder(nn.Module):
 
         # end
         h = self.norm_out(h)
-        h = F.silu(h)
+        h = F.silu(h)  # 使用SiLU激活函数
         h = self.conv_out(h)
         return h
 
@@ -390,14 +411,26 @@ class DiagonalGaussianDistribution(object):
 if __name__ == '__main__':
     import torchsummary
 
+    # 测试：构建一个模型，打印模型结构
+
+    # ddconfig 是一个字典，包含以下键值对：
+    # "x_channels": 输入的通道数
+    # "middle_channels": 中间层的通道数
+    # "z_channels": 编码器的输出通道数
+    # "channel_mult": 一个列表，定义了每个分辨率级别的通道倍数
+    # "num_res_blocks": 每个分辨率级别的残差块数量
     AutoencoderKL(ddconfig={
         "x_channels": 16,
         "middle_channels": 64,
         "z_channels": 32,
         "channel_mult": [ 1,1,2,2,4,4 ],
         "num_res_blocks": 1
-    }, lossconfig={
-        "target": "mug.firststage.autoencoder.ManiaReconstructLoss",
+    },
+        # lossconfig 是一个字典，包含以下键值对：
+        # "target": 损失函数的全名
+        # "params": 一个字典，包含损失函数的参数
+        lossconfig={
+        "target": "mug.firststage.losses.ManiaReconstructLoss",
         "params": {
             "weight_start_offset": 0.5,
             "weight_holding": 0.5,

@@ -350,7 +350,7 @@ MOD_CONVERTOR = {
 if __name__ == "__main__":
     # map_path = """E:\E\osu!\Songs\891164 Various Artists - 4K LN Dan Courses v2 - Extra Level -\Various Artists - 4K LN Dan Courses v2 - Extra Level - (_underjoy) [13th Dan - Yoru (Marathon)].osu"""
     # map_path = r"""E:\E\osu!\Songs\1395676 goreshit - thinking of you\goreshit - thinking of you (hna) [obsession 1.1x (250bpm)].osu"""
-    map_path = r"data/beatmap_4k/824258 wa - Black Lotus/wa. - Black Lotus (Insp1r3) [Blooming].osu"
+    map_path = r"C:\ProjectsAndTricks\Mug-Diffusion\data\beatmap_4k\824258 wa. - Black Lotus\wa. - Black Lotus (Insp1r3) [Blooming].osu"
     objs, beatmap_meta = parse_osu_file(map_path, convertor_params={"frame_ms": 2048 / 22050 / 2 * 1000,
                                                                     "max_frame": 8192,
                                                                     "mirror": False,
@@ -364,3 +364,4 @@ if __name__ == "__main__":
     #               {"Version": "250bpm - convert"})
 
     print(beatmap_meta.convertor.timing_to_array(beatmap_meta)[0].tolist())
+    # print(objs)

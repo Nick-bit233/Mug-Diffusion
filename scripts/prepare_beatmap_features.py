@@ -51,6 +51,7 @@ def invoke_osu_tools(beatmap_path, osu_tools, dotnet_path='dotnet'):
         osu_tools
     ]
     cmd.extend(["difficulty", beatmap_path, "-j"])
+    print(cmd)
     result = json.loads(subprocess.check_output(cmd))
     return result['results'][0]['attributes']['star_rating']
 
@@ -303,6 +304,7 @@ if __name__ == '__main__':
     import sys, argparse
 
     sys.path.append(os.getcwd())
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--beatmap_txt',
                         '-b',
@@ -321,5 +323,16 @@ if __name__ == '__main__':
 
     opt, _ = parser.parse_known_args()
 
-    prepare_features(opt.beatmap_txt, opt.features_yaml, opt.osu_tools, opt.ranked_map_path, 
-                     opt.dotnet_path)
+    # prepare_features(opt.beatmap_txt, opt.features_yaml, opt.osu_tools, opt.ranked_map_path,
+    #                  opt.dotnet_path)
+
+    os.chdir("../")  # nickbit: change to root directory
+
+    beat_map_path = r"C:\ProjectsAndTricks\Mug-Diffusion\data\beatmap_4k\beatmap.txt"
+    features_yaml = r"C:\ProjectsAndTricks\Mug-Diffusion\configs\mug\mania_beatmap_features.yaml"
+    osu_tools = r"C:\ProjectsAndTricks\osu-tools\PerformanceCalculator\bin\Debug\net6.0\PerformanceCalculator.dll"
+    ranked_map_path = None
+    dotnet_path = r"dotnet"
+
+    prepare_features(beat_map_path, features_yaml, osu_tools, ranked_map_path, dotnet_path)
+

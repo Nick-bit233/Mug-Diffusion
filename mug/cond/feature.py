@@ -17,7 +17,7 @@ class BeatmapFeatureEmbedder(torch.nn.Module):
         @param x: [B, F]
         @return [B, H, F]
         """
-        x = rearrange(self.embedding(x.long()), "b f h -> b h f") # [B, H, F]
+        x = rearrange(self.embedding(x.long()), "b f h -> b h f")  # [B, H, F]
         return x
 
 
