@@ -19,8 +19,8 @@ from pytorch_lightning.utilities import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
 
 from ldm.data.base import Txt2ImgIterableBaseDataset
-# from ldm.util import instantiate_from_config
-from mug.util import instantiate_from_config
+from ldm.util import instantiate_from_config
+# from mug.util import instantiate_from_config
 
 
 def get_parser(**parser_kwargs):
