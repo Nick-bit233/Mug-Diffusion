@@ -550,22 +550,22 @@ class UNetModel(nn.Module):
         return h
 
     def summary(self):
-        pass
-        # import torchsummary
-        # torchsummary.summary(self, [
-        #     (16, 512),  # C / T
-        #     (1,),  # time step
-        #     (128, 254),  # context input, C2 / T2
-        #     (256, 512), # audio ?
-        #     (256, 512), # audio ?
-        #     (256, 512), # audio ?
-        #     (256, 512), # audio 1
-        #     (256, 256),  # audio 2
-        #     (512, 128),  # audio 3
-        #     (512, 64),  # audio 4
-        # ],
-        #                      col_names=("output_size", "num_params", "kernel_size"),
-        #                      depth=10, device=th.device("cpu"))
+        # pass
+        import torchsummary
+        torchsummary.summary(self, [
+            (16, 512),  # C / T
+            (1,),  # time step
+            (128, 254),  # context input, C2 / T2
+            (256, 512), # audio ?
+            (256, 512), # audio ?
+            (256, 512), # audio ?
+            (256, 512), # audio 1
+            (256, 256),  # audio 2
+            (512, 128),  # audio 3
+            (512, 64),  # audio 4
+        ],
+                             col_names=("output_size", "num_params", "kernel_size"),
+                             depth=10, device=th.device("cpu"))
 
 
 if __name__ == '__main__':

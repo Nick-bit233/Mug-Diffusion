@@ -365,6 +365,10 @@ if __name__ == '__main__':
                          )
     print(len(dataset))
     print(dataset[0])
+    print(f"['note'].shape: {dataset[0]['note'].shape}")
+    print(f"['audio'].shape: {dataset[0]['audio'].shape}")
+    print(f"['feature'].shape: {dataset[0]['feature'].shape}")
+    print(f"['valid flag'].shape: {dataset[0]['valid_flag'].shape}")
     # breakpoint()
     # dataset[0]
 

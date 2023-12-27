@@ -1,3 +1,5 @@
+import os
+
 import torch
 import yaml
 
@@ -23,12 +25,14 @@ class BeatmapFeatureEmbedder(torch.nn.Module):
 
     def summary(self):
         import torchsummary
-        torchsummary.summary(self, input_data=[5, ],
-                             dtypes=[torch.long],
-                             col_names=("output_size", "num_params", "kernel_size"),
-                             depth=10, device=torch.device("cpu"))
+        torchsummary.summary(self, input_size=(10, ))
+        # torchsummary.summary(self, input_data=[5, ],
+        #                      dtypes=[torch.long],
+        #                      col_names=("output_size", "num_params", "kernel_size"),
+        #                      depth=10, device=torch.device("cpu"))
 
 if __name__ == '__main__':
+    os.chdir("../../")  # nickbit: change to root directory
     BeatmapFeatureEmbedder(path_to_yaml="configs/mug/mania_beatmap_features.yaml",
                            embed_dim=128).summary()
 

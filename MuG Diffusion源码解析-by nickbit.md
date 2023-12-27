@@ -43,10 +43,18 @@ mug/data/utils.py: （待分析）一些用于对齐的工具函数
 ```
 - note：谱面音符的数据（文本 -> 向量）
 - feature：谱面特征的数据，osu元数据和ett分数等 （文本 -> 向量）
-- audio：音频的向量数据，但这里是初始化为空的，要通过wave模型处理音频缓存文件后写入向量
+- audio：音频的张量数据 （有一个问题是，模型是怎么处理长度不同的音频的？）
 - valid_flag：`？一个标记向量，用于标记谱面中的音符是否有效，即是否在音频中有对应的音符？`
+```python
+# 数据集中各张量的shape
+['note'].shape: (16, 4096)
+['audio'].shape: (128, 32768)
+['feature'].shape: (21,)
+['valid flag'].shape: (4096,)
+```
 
 处理音频的缓存`.npz`文件放置于`data/audio_cache`文件夹中。
+
 
 ### [scripts]
 
@@ -58,7 +66,7 @@ scripts/prepare_beatmap_from_ranking_mapper.py: 同上，不过似乎是从特�
 
 scripts/prepare_beatmap_features.py: 从beatmap.txt中读取谱面元数据，抽取谱面特征，并提交到features.db中
 抽取特征需要以下参数：
-```
+```markdown
 beat_map_path = beatmap.txt 文件的路径，记得铺面文件的存放位置与该txt位于同一目录
 features_yaml = 配置feature文件的路径，如"configs/mug/mania_beatmap_features.yaml"
 osu_tools = 一个osu官方开源的计算osu谱面信息的工具，在这里下载：https://github.com/ppy/osu-tools/tree/master/PerformanceCalculator
@@ -70,7 +78,7 @@ dotnet_path = 为了运行PerformanceCalculator.dll，需要安装.NET6.0，安�
 
 scripts/filter_beatmap.py: （待分析）似乎是用于过滤谱面中的变速
 ……
-其他脚本似乎是用于处理Etterna谱面的，或者是一些用于算法测试的，跳过这一部分
+其他脚本似乎是用于处理Etterna谱面的，或者是一些用于算法测试的（破案了，是原来stable diffusion的一些测试代码），跳过这一部分
 
 ### 数据集配置
 
@@ -102,7 +110,7 @@ AutoEncoder的结构如下：
 
 Encoder模型结构：
 
-- 输入通道数16
+- 输入通道数C=16
 - 经过一个3*3的卷积层，输出中间通道数64
 - 经过一系列下采样操作：在每次下采样之前，先经过一个残差块，并让每两次下采样后，网络的通道数翻倍
   - 即: 64 * [1,1,2,2,4,4]
@@ -133,14 +141,14 @@ AutoEncoder模型的使用：
 ### 条件嵌入模型 [mug/cond]
 `mug/cond`这个文件夹里实现的都是条件编码模型，即将谱面的特征提示信息和音频信息一起编码，然后输入Diffusion模型的去噪过程，用来控制输出结果的条件向量。
 
-> 特征输入：符合yaml格式的文本，里面的信息包括如 难度sr，long note比例，键形特征等
+> 特征输入：特征定义在符合yaml格式的文本上，里面的信息包括如 难度sr，long note比例，键形特征等，训练时特征存储在数据集的database里，推理是可以手动输入，或是从一张想要参考的谱面中提取出来
 > 
 > 音频输入：通过频谱变换离散化后的音频数据，有多种处理方式
 > 
-> noise level：
+> noise level：[不知道这个是在哪里被嵌入的……]
 > 
 
-#### feature_cond.py - BeatmapFeatureEmbedder 谱面特征嵌入
+#### feature_cond.py - BeatmapFeatureEmbedder 谱面特征（提示）嵌入
 主要模型为`BeatmapFeatureEmbedder`的类，该类继承自`torch.nn.Module`，用于实现特征编码和嵌入。
 
 这里嵌入的特征是谱面元数据，即`configs/mug/mania_beatmap_features.yaml`中定义的特征。该文件路径需要作为参数传入的构造函数中。    
@@ -239,25 +247,25 @@ DDPM继承了`pl.LightningModule`类。一个继承了`pl.LightningModule`的类
 self.model = MugDiffusionWrapper(unet_config, first_stage_config, wave_stage_config, cond_stage_config)
 ```
 这里，额外定义了一个`MugDiffusionWrapper`类，用来包装MuG Diffusion模型中包含的四个子模型，分别是：
-- cond_stage_model：前文所述的`BeatmapFeatureEmbedder`模型，用来得到【谱面特征】的压缩表示（由可读数据压缩到向量）
-  - 谱面数据包含 osu的谱面元数据（难度等）和 通过minacalc计算得到的谱面特征（各个键形的分布、键形难度等），*不包含note数据*
+- cond_stage_model：前文所述的`BeatmapFeatureEmbedder`模型，用来得到【谱面提示】的压缩表示（由可读数据压缩到向量）
+  - 谱面数据包含 osu的谱面元数据（难度等）和 通过minacalc计算得到的谱面提示（各个键形的分布、键形难度等），*不包含note数据*
 - wave_model：前文所述的`STFTEncoder`或`MelspectrogramScaleEncoder1D`模型，用来编码和解码【音频波形】（由音频数据到条件向量？）
 - first_stage_model：前文所述的`AutoEncoderKL`模型，用来编码和解码 【谱面note数据】（从 向量 编码到 潜空间向量 和 从 潜空间向量 解码）
 - unet_model：与Stable Diffusion类似的U-Net结构，用来学习反向扩散去噪（Denosing）的步骤
   - 即，unet_model接受潜空间的两种输入：1、【潜空间的谱面向量数据】2、【条件嵌入向量，包括音频和谱面特征（即“提示 prompt”）】，
 通过多步扩散迭代，学习正向扩散参数，或是反向扩散输新的谱面向量表示。
-    - 在训练时，unet_model的输入是一个【训练数据集的谱面潜空间向量】和【该谱面对应的音频向量、特征向量】，输出是一个【潜空间向量】，
+    - 在训练时，unet_model的输入是一个【训练数据集的谱面潜空间向量】和【该谱面对应的音频向量、提示向量】，输出是一个【潜空间向量】，
 每一次迭代，都会使得【潜空间向量】接近于从高斯分布采样的【噪声数据】，并同时更新网络权重
     - 在推理生成新谱面时，unet_model的输入是一个【从高斯分布种采样的噪声谱面向量】和【用户想要的谱面音频和特征的输入向量】，通过多次反向扩散，
 得到生成的【谱面潜空间向量】，通过first_stage_model解码得到可读的【谱面note数据】
-    - > U-Net的详细结构在下一个小节描述
+    - > 每个模型的详细结构在下一个小节描述
 
 对比：Stable Diffusion（v1）的模型模块和 MuG Diffusion的模型模块
 
 |                  | 输入编码器（条件嵌入）               | 潜空间扩散网络   | 输出解码器               |
 |------------------|---------------------------|-----------|---------------------|
 | Stable Diffusion | 基于 CLIP 模型的文本编码器          | U-Net     | AutoEncoder（图像）     |
-| MuG Diffusion    | 基于STFT/Mel的音频编码器 + 谱面特征嵌入 | U-Net（魔改） | AutoEncoder（谱面Note） |
+| MuG Diffusion    | 基于STFT/Mel的音频编码器 + 谱面提示嵌入 | U-Net（魔改） | AutoEncoder（谱面Note） |
 
 DDPM使用的优化器是`AdamW`，如果yaml配置文件中定义了学习率调度器，还会使用Pytorch的`LambdaLR`创建一个学习了调度器。
 ```python
@@ -276,13 +284,90 @@ if self.use_scheduler:
 
 `mug/diffusion/unet.py`中定义了U-Net模型，这个模型是DDPM的核心，用于进行潜空间的扩散和反向扩散。
 
+wave_model、cond_stage_model和first_stage_model（即VAE）的输出都将作为U-Net的输入，下面从模型输入和输出的shape简要描述一下模型。
+```python
+# mug/diffusion/diffusion.py
+    ...
+    def forward(self, x, t, c, w):
+        """
+        x 对应 UNetModel 的 x 参数，表示输入的特征张量。
+        t 对应 UNetModel 的 timesteps 参数，表示时间步长。
+        c 对应 UNetModel 的 context 参数，表示上下文信息[谱面提示]，用于条件生成
+        *w 对应 UNetModel 的 *audios 参数，表示音频数据，用于音频处理
+        """
+        return self.unet_model(x, t, c, *w)
+    ...
+```
+整个网络的结构遵循UNet的典型编码器-解码器结构，通过逐渐增加和减少特征图的尺寸来学习丰富的特征表示，最终输出与输入相同尺寸的张量。
+U-Net模仿了Stable Diffusion中的U-Net结构，包括注意力层等，但是做了一些改动，主要是为了适应【音频数据具有天然的时序性】。
+
+因此，U-Net模型中可以选择加入下面的部分来增强模型处理序列数据的能力。
+- LSTM层，使用LSTM模型处理时序信息，这也是参考已有生成谱面的工作，大多采用了LSTM块来设计网络。
+- S4层：使用Structured State Space（S4）模型，是一种基于状态空间模型（SSM）的新型序列建模方法。它本质上是连续时间的，并且在建模数据中的长期依赖性方面表现出色。
+
+
+模型结构流程描述：
+- [ i ] 首先进行一个卷积，将输入张量数据（谱面note数据）的通道数转换为`model_channels`
+（`model_channels`是配置文件中定义的参数(128)，代表模型的通道数）。
+- [ ii ] Downstamps（input_blocks） 下采样:"U“形状的左半边，每次通过两个网络模块：
+  - 1、`AudioConcatBlock`，将当前分辨率等级的音频通道数*直接加到*到模型的通道数中，并连接音频数据和输入数据。
+音频通道数对于不同的采样分辨率分别是[256,512,512,512]
+  - 2、一个ResBlock（残差块），其中包含三层：
+    - 第一 `TimestepResBlock`，和Stable Diffusion的方法一样，将时间步数据嵌入到残差块中（没细看，不知道这里有没有魔改……
+    - 第二 `ContextualTransformer`（自定义注意力层）， 
+    - 第三：按照配置中的指定，在注意力层中后面**额外添加一个LSTM层或S4层**。
+  - 每个`TimestepResBlock`都会从外部连接一个timestep_emb，作为时间信息的编码。这里采用了和Stable Diffusion一样的策略，
+  timestep_emb的长度为`model_channels`的4倍。
+  - 每个`ContextualTransformer`层都会从外部连接一个相同的context张量，这个就是之前传入的c，从BeatmapFeatureEmbedder获得的谱面特征提示数据
+    > 在原版Stable Diffusion里，注意力块名称是SpatialTransformer，因为生成图像的文本提示contex是不定长的，而这里生成谱面的提示是定长的，
+    > 且不需要进行2D卷积。因此这里重新写了一个ContextualTransformer，二者都是从BasicTransformerBlock继承而来。
+
+  - 每次通过完整的input_block以后，进行一次下采样，倍增模型的通道数（按照配置，倍率为[ 1,2,4,4 ]），压缩数据的维度和注意力层的分辨率
+- [ iii ] middle_block: "U"形状的底部，也是模型的中间层，与Stable Diffusion的结构仍然相同，通过了一个三明治形状的`TimestepResBlock`-`ContextualTransformer`-`TimestepResBlock`网络块。
+- [ iv ] Upstamps（output_blocks） 上采样："U"形状的右半边，老样子，与下采样相反即可，每次通过相同的`TimestepResBlock`-`ContextualTransformer`-`LSTM/S4`层后进行一次上采样。
+- [ v ] 输出层：上采样结果先通过一个归一化层和一个SiLU激活函数，然后最后通过一个卷积层将特征映射到目标输出通道数，over。
+  > 好奇：这里和原版SD一样，用了个`zero_module`来初始化卷积层，不知是什么优化技巧……
+
+各个模型的input size和Output size：
+> 下表默认省略了batch size，即应该添加在各个input size前面的批量维度B
+
+| 模型                           | Input size       | Output size | 备注                                                                                               |
+|------------------------------|------------------|-------------|--------------------------------------------------------------------------------------------------|
+| (VAE)Encoder                 | (16, 4096)       | (64, 128)   | 16是谱面note数据的输入通道数，它是由“4K”按键的四个位置，每个位置分配4个通道构成的。<br/>经过多次下采样后得到形状256\*128，然后通过卷积压缩到潜空间的形状为64\*128 |
+| (VAE)Decoder                 | (64, 128)        | (16, 4096)  | 与上面相反，多次上采样后得到形状64\*4096,  然后通过卷积恢复到谱面形状16\*4096                                                 |
+| BeatmapFeatureEmbedder       | (f)              | (f, 128)    | f是feature的数量？（数据集中一个谱面的feature长度为21）                                                             |
+| MelspectrogramScaleEncoder1D | (128, 32768)     | (512, 64)   | 32768代表最大的序列长度（梅尔频谱图的长度），和下面的傅里叶变换相比，是将两个音频通道混合到一起，数量*2                                          |
+| STFTEncoder                  | (2, 1025, 16384) | (32, 256)   | 2=输入通数道（对应复数的实部和虚部），1025=频率分辨率，16384=最大的序列长度，输出形状中的32是输出通道数                                      | 
+| U-Net(使用STFT)                | (544, 4096)      | (32, 4096)  | 在这个方法中，音频通道和输入通道（32）一开始就通过直接连接合并到一起，544 = 512+32 (我也不知道为什么使用STFT的通道数多一倍，对不起我没学过信号处理QAQ)          |
+| U-Net(使用MelScaleEncoder1D)   | (16, 4096)       | (16, 4096)  | x是从噪声分布中采样的，与谱面note数据形状相同的随机输入。 而提示数据、时间步数据和音频数据都是从外部嵌入的。                                        |
+
 #### ddim.py - DDIM模型
 
-DDIM是DDPM的一个改进模型，用于推理时快速采样，貌似训练时没有用到。
+DDIM是DDPM的一个改进模型，用于推理时快速采样x，貌似训练时没有用到。
 
 ### 训练入口[main.py]
 
-
+- 加载模型：`model = instantiate_from_config(config.model)`,config里配置的模型即为DDPM模型
+- 加载数据：
+```python
+data = instantiate_from_config(config.data)
+data.prepare_data()
+data.setup()
+print("#### Data #####")
+for k in data.datasets:
+    print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
+```
+- 开始训练，使用`trainer.fit()`函数，传入模型和数据集
+```python
+if opt.train:
+    try:
+        trainer.fit(model, data)
+    except Exception:
+        melk()
+        raise
+if not opt.no_test and not trainer.interrupted:
+    trainer.test(model, data)
+```
 
 
 ## （4）WebUI和推理部分

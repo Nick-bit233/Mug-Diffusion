@@ -120,9 +120,7 @@ class STFTEncoder(nn.Module):
         import torchsummary
         torchsummary.summary(self, [
             (2, 1025, 16384),
-        ],
-                             col_names=("output_size", "num_params", "kernel_size"),
-                             depth=10, device=torch.device("cpu"))
+        ])
 
 
 
@@ -468,17 +466,15 @@ class MelspectrogramScaleEncoder1D(nn.Module):
         import torchsummary
         torchsummary.summary(self, [
             (128, 32768),
-        ],
-                             col_names=("output_size", "num_params", "kernel_size"),
-                             depth=4, device=torch.device("cpu"))
+        ])
 
 
 
 if __name__ == '__main__':
     # MelspectrogramEncoder1D(n_freq=128, middle_channels=96, out_channels=32,
     #                         num_res_blocks=2, channel_mult=[1, 1, 2, 2, 2, 4, 4]).summary()
-    # STFTEncoder(n_fft=2048, middle_channels=128, out_channels=32,
-    #               num_res_blocks=2, channel_mult=[1, 2, 2, 2, 4, 4, 4]).summary()
-    MelspectrogramScaleEncoder1D(n_freq=128, middle_channels=128, attention_resolutions=[128, 256, 512],
-                                 num_heads=8, num_groups=32, channel_mult=[1, 1, 1, 1, 2, 2, 2, 4, 4, 4],
-                                 num_res_blocks=2).summary()
+    STFTEncoder(n_fft=2048, middle_channels=128, out_channels=32,
+                  num_res_blocks=2, channel_mult=[1, 2, 2, 2, 4, 4, 4]).summary()
+    # MelspectrogramScaleEncoder1D(n_freq=128, middle_channels=128, attention_resolutions=[128, 256, 512],
+    #                              num_heads=8, num_groups=32, channel_mult=[1, 1, 1, 1, 2, 2, 2, 4, 4, 4],
+    #                              num_res_blocks=2).summary()

@@ -86,17 +86,6 @@ class AutoencoderKL(pl.LightningModule):
         dec = self.decode(h)
         return dec, z
 
-    """
-    这段代码定义了三个函数：`step`，`training_step`和`validation_step`，它们都是`AutoencoderKL`类的方法，这个类是一个PyTorch的`LightningModule`，用于实现一个变分自编码器（Variational Autoencoder，VAE）模型。
-    
-    `step`函数是一个通用的步骤函数，它接收一个批次的数据（`batch`），一个字符串（`split`）表示当前的阶段（如'train'或'val'），以及一个布尔值（`sample_posterior`）表示是否从后验分布中采样。这个函数首先从批次数据中提取音符（`notes`）和有效标志（`valid_flag`），然后将音符传递给模型进行前向传播，得到重构的音符（`reconstructions`）和编码后的数据（`z`）。然后，它计算损失函数的值（`loss`），并计算KL散度（`kl_loss`）。最后，它将KL散度乘以一个权重（`self.kl_weight`）并加到损失上，然后返回最终的损失和一些日志信息。
-    
-    `training_step`函数是模型训练过程中的一个步骤，它调用`step`函数进行前向传播和损失计算，然后使用`self.log`和`self.log_dict`方法记录损失和其他日志信息。这个函数的返回值是损失，它将被用于反向传播和参数更新。
-    
-    `validation_step`函数是模型验证过程中的一个步骤，它的工作方式与`training_step`函数类似，但是在调用`step`函数时，`sample_posterior`参数被设置为`False`，表示在验证过程中不从后验分布中采样。这个函数的返回值是日志信息，它将被用于记录验证过程的结果。
-    
-    总的来说，这三个函数是实现模型训练和验证的关键部分，它们定义了如何从输入数据计算损失，以及如何记录训练和验证过程的信息。
-    """
     def step(self, batch, split, sample_posterior):
         notes = batch['note']
         valid_flag = batch['valid_flag']
